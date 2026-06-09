@@ -1,0 +1,36 @@
+cat > .gitignore << 'EOF'
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# nuScenes dataset / large data files
+data/sets/nuscenes/
+*.tgz
+*.tar
+*.tar.gz
+*.zip
+
+# Generated dataset files
+*.npz
+*.npy
+
+# Model checkpoints / heavy training outputs
+outputs/checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# System files
+.DS_Store
+Thumbs.db
+EOF
