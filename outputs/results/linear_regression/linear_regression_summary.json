@@ -1,0 +1,16 @@
+[
+    {
+        "method": "linear_regression",
+        "alpha": null,
+        "ade": 1.1792011331073644,
+        "fde": 2.707784376461694,
+        "num_samples": 704
+    },
+    {
+        "method": "ridge_regression",
+        "alpha": 10.0,
+        "ade": 1.1692448788089678,
+        "fde": 2.679322338120652,
+        "num_samples": 704
+    }
+]

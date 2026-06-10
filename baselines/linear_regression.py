@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LinearRegression, Ridge
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.append(PROJECT_ROOT)
@@ -13,9 +14,10 @@ sys.path.append(PROJECT_ROOT)
 from dataset import NuScenesTrajectoryDataset
 
 DATA_PATH = os.path.join(PROJECT_ROOT, "data", "nuscenes_mini_traj_only.npz")
-METHOD_GROUP = "constant_velocity"
+METHOD_GROUP = "linear_regression"
 RESULTS_DIR = os.path.join(PROJECT_ROOT, "outputs", "results", METHOD_GROUP)
 PLOTS_DIR = os.path.join(PROJECT_ROOT, "outputs", "plots", METHOD_GROUP)
+RIDGE_ALPHAS = [0.01, 0.1, 1.0, 10.0, 100.0]
 TEST_SIZE = 0.2
 RANDOM_STATE = 43
 
@@ -42,7 +44,7 @@ def plot_trajectory_example(X, y_true, y_pred, method_name, idx, ade, fde):
 
     plt.scatter(X_np[-1, 0], X_np[-1, 1], marker="s", label="Current position")
 
-    plt.title(f"Constant Velocity ({method_name}) | sample {idx}\nADE={ade:.3f}, FDE={fde:.3f}")
+    plt.title(f"{method_name} | sample {idx}\nADE={ade:.3f}, FDE={fde:.3f}")
     plt.xlabel("x position")
     plt.ylabel("y position")
     plt.legend()
@@ -52,7 +54,7 @@ def plot_trajectory_example(X, y_true, y_pred, method_name, idx, ade, fde):
 
     save_path = os.path.join(
         PLOTS_DIR,
-        f"{METHOD_GROUP}_{method_name}_sample_{idx}.png"
+        f"{method_name}_sample_{idx}.png"
     )
 
     plt.savefig(save_path, dpi=200)
@@ -62,7 +64,7 @@ def plot_trajectory_example(X, y_true, y_pred, method_name, idx, ade, fde):
 def save_per_sample_results(method_name, rows):
     csv_path = os.path.join(
         RESULTS_DIR,
-        f"{METHOD_GROUP}_{method_name}_per_sample.csv"
+        f"{method_name}_per_sample.csv"
     )
 
     with open(csv_path, "w", newline="") as f:
@@ -81,7 +83,7 @@ def save_summary_results(results):
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(
             f,
-            fieldnames=["method", "ade", "fde", "num_samples"]
+            fieldnames=["method", "alpha", "ade", "fde", "num_samples"]
         )
         writer.writeheader()
         writer.writerows(results)
@@ -105,7 +107,7 @@ def plot_metric_comparison(results):
 
     plt.xticks(x, methods, rotation=15)
     plt.ylabel("Error")
-    plt.title("Constant Velocity Baseline Comparison")
+    plt.title(f"{METHOD_GROUP} Baseline Comparison")
     plt.legend()
     plt.grid(axis="y")
     plt.tight_layout()
@@ -121,16 +123,78 @@ def ADE(pred, true):
 def FDE(pred, true):
     return torch.norm(pred[-1] - true[-1]).item()
 
-def constant_velocity(type="last_step", num_plots=5):
-    total_length = len(dataset)
+def linear_regression(ridge=False, num_plots=5):
+    length = len(dataset)
 
-    all_indices = np.arange(total_length)
+    X_rows = []
+    y_rows = []
+    indices = []
 
-    _, test_indices = train_test_split(
-        all_indices,
+    for idx in range(length):
+        X, y_true = dataset[idx]
+
+        X_rows.append(X.flatten().numpy())       # [5, 2] -> [10]
+        y_rows.append(y_true.flatten().numpy())  # [12, 2] -> [24]
+        indices.append(idx)
+
+    X_all = np.array(X_rows)
+    y_all = np.array(y_rows)
+    indices = np.array(indices)
+
+    X_train_full, X_test, y_train_full, y_test, idx_train_full, idx_test = train_test_split(
+        X_all,
+        y_all,
+        indices,
         test_size=TEST_SIZE,
         random_state=RANDOM_STATE
     )
+
+    if not ridge:
+        model = LinearRegression()
+        method_name = "linear_regression"
+        best_alpha = None
+        model.fit(X_train_full, y_train_full)
+
+    else:
+        method_name = "ridge_regression"
+        best_alpha = None
+        best_val_ade = float("inf")
+
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_train_full,
+            y_train_full,
+            test_size=TEST_SIZE,
+            random_state=RANDOM_STATE
+        )
+
+        for alpha in RIDGE_ALPHAS:
+            candidate_model = Ridge(alpha=alpha)
+            candidate_model.fit(X_train, y_train)
+
+            val_pred = candidate_model.predict(X_val)
+
+            val_pred = val_pred.reshape(-1, 12, 2)
+            val_true = y_val.reshape(-1, 12, 2)
+
+            val_errors = np.linalg.norm(val_pred - val_true, axis=2)
+            val_ade = val_errors.mean()
+
+            print(f"Ridge alpha={alpha} | validation ADE={val_ade:.4f}")
+
+            if val_ade < best_val_ade:
+                best_val_ade = val_ade
+                best_alpha = alpha
+
+        print(f"Best Ridge alpha: {best_alpha}")
+
+        model = Ridge(alpha=best_alpha)
+        model.fit(X_train_full, y_train_full)
+
+    y_pred = model.predict(X_test)
+
+    X_test = X_test.reshape(-1, 5, 2)
+    y_test = y_test.reshape(-1, 12, 2)
+    y_pred = y_pred.reshape(-1, 12, 2)
 
     ade_list = []
     fde_list = []
@@ -138,51 +202,37 @@ def constant_velocity(type="last_step", num_plots=5):
 
     plot_positions = np.linspace(
         0,
-        len(test_indices) - 1,
-        min(num_plots, len(test_indices)),
+        len(X_test) - 1,
+        min(num_plots, len(X_test)),
         dtype=int
     )
 
-    for i, idx in enumerate(test_indices):
-        idx = int(idx)
-        X, y_true = dataset[idx]
+    for i in range(len(X_test)):
+        X_tensor = torch.tensor(X_test[i], dtype=torch.float32)
+        y_true_tensor = torch.tensor(y_test[i], dtype=torch.float32)
+        y_pred_tensor = torch.tensor(y_pred[i], dtype=torch.float32)
 
-        current_pos = X[-1]
-        future_steps = y_true.shape[0]
-        steps = torch.arange(1, future_steps + 1).reshape(-1, 1)
-
-        if type == "last_step":
-            prev_pos = X[-2]
-            displacement = current_pos - prev_pos
-
-        elif type == "smoothed":
-            displacements = X[1:] - X[:-1]
-            displacement = displacements.mean(dim=0)
-
-        else:
-            raise ValueError(f"Unknown constant velocity type: {type}")
-
-        y_pred = current_pos + displacement * steps
-
-        ade = ADE(y_pred, y_true)
-        fde = FDE(y_pred, y_true)
+        ade = ADE(y_pred_tensor, y_true_tensor)
+        fde = FDE(y_pred_tensor, y_true_tensor)
 
         ade_list.append(ade)
         fde_list.append(fde)
 
+        original_idx = int(idx_test[i])
+
         per_sample_rows.append({
-            "sample_idx": idx,
+            "sample_idx": original_idx,
             "ade": ade,
             "fde": fde
         })
 
         if i in plot_positions:
             plot_trajectory_example(
-                X=X,
-                y_true=y_true,
-                y_pred=y_pred,
-                method_name=type,
-                idx=idx,
+                X=X_tensor,
+                y_true=y_true_tensor,
+                y_pred=y_pred_tensor,
+                method_name=method_name,
+                idx=original_idx,
                 ade=ade,
                 fde=fde
             )
@@ -190,25 +240,25 @@ def constant_velocity(type="last_step", num_plots=5):
     mean_ade = float(np.mean(ade_list))
     mean_fde = float(np.mean(fde_list))
 
-    save_per_sample_results(type, per_sample_rows)
+    save_per_sample_results(method_name, per_sample_rows)
 
-    print(f"\nConstant Velocity Type: {type}")
+    print(f"\nMethod: {method_name}")
     print("ADE:", mean_ade)
     print("FDE:", mean_fde)
 
     return {
-        "method": f"constant_velocity_{type}",
+        "method": method_name,
+        "alpha": best_alpha,
         "ade": mean_ade,
         "fde": mean_fde,
-        "num_samples": len(test_indices)
+        "num_samples": len(X_test)
     }
-
-
+ 
 def main():
     results = []
 
-    results.append(constant_velocity(type="last_step"))
-    results.append(constant_velocity(type="smoothed"))
+    results.append(linear_regression(ridge=False))
+    results.append(linear_regression(ridge=True))
 
     save_summary_results(results)
     plot_metric_comparison(results)
@@ -219,7 +269,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# Constant velocity is strong for stationary and smooth motion,
-# but it fails on nonlinear or maneuvering trajectories.
