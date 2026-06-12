@@ -1,0 +1,29 @@
+[
+    {
+        "method": "mlp_hidden_64",
+        "hidden_dim": 64,
+        "epochs": 100,
+        "lr": 0.001,
+        "ade": 1.1071465638603761,
+        "fde": 2.4095373765424237,
+        "num_samples": 704
+    },
+    {
+        "method": "mlp_hidden_128",
+        "hidden_dim": 128,
+        "epochs": 100,
+        "lr": 0.001,
+        "ade": 1.0524982899157542,
+        "fde": 2.3539160906346464,
+        "num_samples": 704
+    },
+    {
+        "method": "mlp_hidden_256",
+        "hidden_dim": 256,
+        "epochs": 100,
+        "lr": 0.001,
+        "ade": 1.020161380680458,
+        "fde": 2.2839872122891722,
+        "num_samples": 704
+    }
+]

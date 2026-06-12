@@ -1,0 +1,54 @@
+[
+    {
+        "method": "transformer_d64_heads_4_layers_1_ff_128_lr_0p0003",
+        "d_model": 64,
+        "nhead": 4,
+        "num_layers": 1,
+        "dim_feedforward": 128,
+        "epochs": 100,
+        "lr": 0.0003,
+        "dropout": 0.1,
+        "ade": 0.9465912013864991,
+        "fde": 1.9825603335504474,
+        "num_samples": 704
+    },
+    {
+        "method": "transformer_d128_heads_4_layers_1_ff_256_lr_0p0003",
+        "d_model": 128,
+        "nhead": 4,
+        "num_layers": 1,
+        "dim_feedforward": 256,
+        "epochs": 100,
+        "lr": 0.0003,
+        "dropout": 0.1,
+        "ade": 0.8766282866867683,
+        "fde": 1.8520912104286253,
+        "num_samples": 704
+    },
+    {
+        "method": "transformer_d128_heads_4_layers_2_ff_256_lr_0p0003",
+        "d_model": 128,
+        "nhead": 4,
+        "num_layers": 2,
+        "dim_feedforward": 256,
+        "epochs": 100,
+        "lr": 0.0003,
+        "dropout": 0.1,
+        "ade": 0.8028461771133483,
+        "fde": 1.6817126303516985,
+        "num_samples": 704
+    },
+    {
+        "method": "transformer_d128_heads_4_layers_2_ff_512_lr_0p0003",
+        "d_model": 128,
+        "nhead": 4,
+        "num_layers": 2,
+        "dim_feedforward": 512,
+        "epochs": 100,
+        "lr": 0.0003,
+        "dropout": 0.1,
+        "ade": 0.81359288970072,
+        "fde": 1.6773482349437308,
+        "num_samples": 704
+    }
+]

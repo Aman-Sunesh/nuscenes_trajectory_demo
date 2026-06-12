@@ -1,0 +1,3 @@
+method,alpha,ade,fde,num_samples
+linear_regression,,1.1416428320014596,2.6140753069088203,704
+ridge_regression,1.0,1.150862880466527,2.637188413820695,704

@@ -1,0 +1,79 @@
+[
+    {
+        "method": "lstm_hidden_64_layers_1",
+        "hidden_dim": 64,
+        "num_layers": 1,
+        "epochs": 100,
+        "lr": 0.001,
+        "dropout": 0.1,
+        "ade": 0.9439738576051737,
+        "fde": 2.056215047418556,
+        "num_samples": 704
+    },
+    {
+        "method": "lstm_hidden_128_layers_1",
+        "hidden_dim": 128,
+        "num_layers": 1,
+        "epochs": 100,
+        "lr": 0.001,
+        "dropout": 0.1,
+        "ade": 0.8884831092423568,
+        "fde": 1.9431166776154318,
+        "num_samples": 704
+    },
+    {
+        "method": "lstm_hidden_256_layers_1",
+        "hidden_dim": 256,
+        "num_layers": 1,
+        "epochs": 100,
+        "lr": 0.001,
+        "dropout": 0.1,
+        "ade": 0.9195051130346573,
+        "fde": 1.9920801096463534,
+        "num_samples": 704
+    },
+    {
+        "method": "lstm_hidden_128_layers_2",
+        "hidden_dim": 128,
+        "num_layers": 2,
+        "epochs": 100,
+        "lr": 0.001,
+        "dropout": 0.1,
+        "ade": 0.858370849858726,
+        "fde": 1.8613973188905881,
+        "num_samples": 704
+    },
+    {
+        "method": "lstm_hidden_256_layers_2",
+        "hidden_dim": 256,
+        "num_layers": 2,
+        "epochs": 100,
+        "lr": 0.001,
+        "dropout": 0.1,
+        "ade": 0.9200198797585802,
+        "fde": 2.011150013539009,
+        "num_samples": 704
+    },
+    {
+        "method": "lstm_hidden_128_layers_3",
+        "hidden_dim": 128,
+        "num_layers": 3,
+        "epochs": 100,
+        "lr": 0.001,
+        "dropout": 0.1,
+        "ade": 0.8648231937576466,
+        "fde": 1.8652316953613826,
+        "num_samples": 704
+    },
+    {
+        "method": "lstm_hidden_256_layers_3",
+        "hidden_dim": 256,
+        "num_layers": 3,
+        "epochs": 100,
+        "lr": 0.001,
+        "dropout": 0.1,
+        "ade": 0.9228206545178016,
+        "fde": 2.010697702468447,
+        "num_samples": 704
+    }
+]

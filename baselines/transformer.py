@@ -14,10 +14,10 @@ sys.path.append(PROJECT_ROOT)
 
 from dataset import NuScenesTrajectoryDataset
 
-DATA_PATH = os.path.join(PROJECT_ROOT, "data", "nuscenes_mini_traj_only.npz")
+DATA_PATH = os.path.join(PROJECT_ROOT, "data", "nuscenes_mini_traj_motion_yaw_map_agents.npz")
 METHOD_GROUP = "transformer"
-RESULTS_DIR = os.path.join(PROJECT_ROOT, "outputs", "results", METHOD_GROUP)
-PLOTS_DIR = os.path.join(PROJECT_ROOT, "outputs", "plots", METHOD_GROUP)
+RESULTS_DIR = os.path.join(PROJECT_ROOT, "outputs", "results_motion_yaw_map_agents", METHOD_GROUP)
+PLOTS_DIR = os.path.join(PROJECT_ROOT, "outputs", "plots_motion_yaw_map_agents", METHOD_GROUP)
 
 TEST_SIZE = 0.2
 RANDOM_STATE = 43
@@ -27,11 +27,81 @@ os.makedirs(PLOTS_DIR, exist_ok=True)
 
 dataset = NuScenesTrajectoryDataset(DATA_PATH)
 
+OUTPUT_STEPS = 12
+DT = 0.5
+HORIZON_TIMES = [(i + 1) * DT for i in range(OUTPUT_STEPS)]
+HORIZON_FIELDS = [f"err_{str(t).replace('.', 'p')}s" for t in HORIZON_TIMES]
+
+
+def horizon_errors(pred, true):
+    errors = torch.norm(pred - true, dim=1)
+    return errors.detach().cpu().numpy().astype(float)
+
+def normalize_input_features(X_train, X_test, eps=1e-6):
+    """
+    Normalize input features using training-set statistics only.
+
+    Only X is normalized.
+    y remains in original x/y coordinate scale so ADE/FDE stay meaningful.
+    """
+    feature_mean = X_train.reshape(-1, X_train.shape[-1]).mean(axis=0)
+    feature_std = X_train.reshape(-1, X_train.shape[-1]).std(axis=0)
+
+    feature_std[feature_std < eps] = 1.0
+
+    X_train_norm = (X_train - feature_mean) / feature_std
+    X_test_norm = (X_test - feature_mean) / feature_std
+
+    return X_train_norm, X_test_norm, feature_mean, feature_std
+
+def save_horizon_results(results):
+    csv_path = os.path.join(RESULTS_DIR, f"{METHOD_GROUP}_horizon_errors.csv")
+
+    rows = []
+
+    for result in results:
+        row = {"method": result["method"]}
+
+        for field, value in zip(HORIZON_FIELDS, result["horizon_errors"]):
+            row[field] = float(value)
+
+        rows.append(row)
+
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["method"] + HORIZON_FIELDS
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def plot_horizon_comparison(results):
+    plt.figure(figsize=(9, 6))
+
+    for result in results:
+        plt.plot(
+            HORIZON_TIMES,
+            result["horizon_errors"],
+            marker="o",
+            label=result["method"]
+        )
+
+    plt.xlabel("Prediction horizon (seconds)")
+    plt.ylabel("Mean displacement error")
+    plt.title(f"{METHOD_GROUP}: Error by Prediction Horizon")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+
+    save_path = os.path.join(PLOTS_DIR, f"{METHOD_GROUP}_horizon_errors.png")
+    plt.savefig(save_path, dpi=200)
+    plt.close()
 
 class TransformerBaseline(nn.Module):
     def __init__(
         self,
-        input_dim=2,
+        input_dim=25,
         d_model=128,
         nhead=4,
         num_layers=2,
@@ -98,26 +168,42 @@ def FDE(pred, true):
 
 def plot_trajectory_example(X, y_true, y_pred, method_name, idx, ade, fde):
     X_np = X.detach().cpu().numpy()
+    X_xy = X_np[:, :2]
     y_true_np = y_true.detach().cpu().numpy()
     y_pred_np = y_pred.detach().cpu().numpy()
 
-    current_np = X_np[-1:]
+    current_np = X_xy[-1:]
     true_future_with_current = np.vstack([current_np, y_true_np])
     pred_future_with_current = np.vstack([current_np, y_pred_np])
 
     plt.figure(figsize=(7, 6))
 
-    plt.plot(X_np[:, 0], X_np[:, 1], marker="o", label="Past trajectory")
+    plt.plot(X_xy[:, 0], X_xy[:, 1], marker="o", label="Past trajectory")
     plt.plot(true_future_with_current[:, 0], true_future_with_current[:, 1], marker="o", label="True future")
     plt.plot(pred_future_with_current[:, 0], pred_future_with_current[:, 1], marker="x", label="Predicted future")
 
-    plt.scatter(X_np[-1, 0], X_np[-1, 1], marker="s", label="Current position")
+    plt.scatter(X_xy[-1, 0], X_xy[-1, 1], marker="s", label="Current position")
 
     plt.title(f"{method_name} | sample {idx}\nADE={ade:.3f}, FDE={fde:.3f}")
     plt.xlabel("x position")
     plt.ylabel("y position")
+
+    all_xy = np.vstack([X_xy, y_true_np, y_pred_np])
+
+    x_min, y_min = all_xy.min(axis=0)
+    x_max, y_max = all_xy.max(axis=0)
+
+    x_center = 0.5 * (x_min + x_max)
+    y_center = 0.5 * (y_min + y_max)
+
+    span = max(x_max - x_min, y_max - y_min, 1.0)
+    span = span * 1.15
+
+    plt.xlim(x_center - span / 2, x_center + span / 2)
+    plt.ylim(y_center - span / 2, y_center + span / 2)
+
     plt.legend()
-    plt.axis("equal")
+    plt.gca().set_aspect("equal", adjustable="box")
     plt.grid(True)
     plt.tight_layout()
 
@@ -142,6 +228,11 @@ def save_summary_results(results):
     csv_path = os.path.join(RESULTS_DIR, f"{METHOD_GROUP}_summary.csv")
     json_path = os.path.join(RESULTS_DIR, f"{METHOD_GROUP}_summary.json")
 
+    summary_rows = [
+        {k: v for k, v in r.items() if k != "horizon_errors"}
+        for r in results
+    ]
+
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(
             f,
@@ -160,10 +251,10 @@ def save_summary_results(results):
             ]
         )
         writer.writeheader()
-        writer.writerows(results)
+        writer.writerows(summary_rows)
 
     with open(json_path, "w") as f:
-        json.dump(results, f, indent=4)
+        json.dump(summary_rows, f, indent=4)
 
 
 def plot_metric_comparison(results):
@@ -234,6 +325,15 @@ def run_transformer(
         shuffle=True
     )
 
+    X_test_raw = X_test.copy()
+
+    X_train, X_test, feature_mean, feature_std = normalize_input_features(
+        X_train,
+        X_test
+    )
+
+    input_dim = X_train.shape[-1]
+
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     y_train_tensor = torch.tensor(y_train, dtype=torch.float32)
 
@@ -248,7 +348,7 @@ def run_transformer(
     )
 
     model = TransformerBaseline(
-        input_dim=2,
+        input_dim=input_dim,
         d_model=d_model,
         nhead=nhead,
         num_layers=num_layers,
@@ -258,7 +358,7 @@ def run_transformer(
         output_steps=12
     )
 
-    loss_fn = nn.MSELoss()
+    loss_fn = nn.SmoothL1Loss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
     model.train()
@@ -289,6 +389,7 @@ def run_transformer(
 
     ade_list = []
     fde_list = []
+    horizon_error_rows = []
     per_sample_rows = []
 
     plot_positions = np.linspace(
@@ -299,15 +400,17 @@ def run_transformer(
     )
 
     for i in range(len(X_test)):
-        X_tensor = X_test_tensor[i]
+        X_plot_tensor = torch.tensor(X_test_raw[i], dtype=torch.float32)
         y_true_tensor = y_test_tensor[i]
         y_pred_single = y_pred_tensor[i]
 
         ade = ADE(y_pred_single, y_true_tensor)
         fde = FDE(y_pred_single, y_true_tensor)
+        h_err = horizon_errors(y_pred_single, y_true_tensor)
 
         ade_list.append(ade)
         fde_list.append(fde)
+        horizon_error_rows.append(h_err)
 
         original_idx = int(idx_test[i])
 
@@ -319,7 +422,7 @@ def run_transformer(
 
         if i in plot_positions:
             plot_trajectory_example(
-                X=X_tensor,
+                X=X_plot_tensor,
                 y_true=y_true_tensor,
                 y_pred=y_pred_single,
                 method_name=method_name,
@@ -330,6 +433,7 @@ def run_transformer(
 
     mean_ade = float(np.mean(ade_list))
     mean_fde = float(np.mean(fde_list))
+    mean_horizon_errors = np.mean(np.stack(horizon_error_rows), axis=0)
 
     save_per_sample_results(method_name, per_sample_rows)
 
@@ -348,20 +452,24 @@ def run_transformer(
         "dropout": dropout,
         "ade": mean_ade,
         "fde": mean_fde,
-        "num_samples": len(X_test)
+        "num_samples": len(X_test),
+        "horizon_errors": mean_horizon_errors
     }
 
 
 def main():
     results = []
 
-    results.append(run_transformer(d_model=64, nhead=4, num_layers=1, dim_feedforward=128, epochs=100, lr=3e-4))
-    results.append(run_transformer(d_model=128, nhead=4, num_layers=1, dim_feedforward=256, epochs=100, lr=3e-4))
-    results.append(run_transformer(d_model=128, nhead=4, num_layers=2, dim_feedforward=256, epochs=100, lr=3e-4))
-    results.append(run_transformer(d_model=128, nhead=4, num_layers=2, dim_feedforward=512, epochs=100, lr=3e-4))
- 
+    results.append(run_transformer(d_model=64, nhead=4, num_layers=1, dim_feedforward=128, epochs=100, lr=3e-4, num_plots=20))
+    results.append(run_transformer(d_model=128, nhead=4, num_layers=1, dim_feedforward=256, epochs=100, lr=3e-4, num_plots=20))
+    results.append(run_transformer(d_model=128, nhead=4, num_layers=2, dim_feedforward=256, epochs=100, lr=3e-4, num_plots=20))
+    results.append(run_transformer(d_model=128, nhead=4, num_layers=2, dim_feedforward=512, epochs=100, lr=3e-4, num_plots=20))
+
     save_summary_results(results)
+    save_horizon_results(results)
+
     plot_metric_comparison(results)
+    plot_horizon_comparison(results)
 
     print("\nSaved results to:", RESULTS_DIR)
     print("Saved plots to:", PLOTS_DIR)

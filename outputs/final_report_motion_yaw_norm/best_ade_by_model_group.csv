@@ -1,0 +1,3 @@
+model_group,feature_set,method,ade,fde,num_samples,summary_path,hidden_dim,num_layers,epochs,lr,dropout,alpha,d_model,nhead,dim_feedforward,raw_method,display_method
+linear_regression,motion_yaw_norm+fallback_from_motion_yaw,linear_regression,1.1416428320014596,2.6140753069088203,704,/workspaces/nuscenes_trajectory_demo/outputs/results_motion_yaw/linear_regression/linear_regression_summary.csv,,,,,,1.0,,,,linear_regression,linear_regression
+constant_velocity,motion_yaw_norm+fallback_from_motion_yaw,constant_velocity_last_step,1.152591207942378,2.6385461937492933,704,/workspaces/nuscenes_trajectory_demo/outputs/results_motion_yaw/constant_velocity/constant_velocity_summary.csv,,,,,,,,,,constant_velocity_last_step,constant_velocity_last_step

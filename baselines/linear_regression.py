@@ -13,10 +13,10 @@ sys.path.append(PROJECT_ROOT)
 
 from dataset import NuScenesTrajectoryDataset
 
-DATA_PATH = os.path.join(PROJECT_ROOT, "data", "nuscenes_mini_traj_only.npz")
+DATA_PATH = os.path.join(PROJECT_ROOT, "data", "nuscenes_mini_traj_motion_yaw_map_agents.npz")
 METHOD_GROUP = "linear_regression"
-RESULTS_DIR = os.path.join(PROJECT_ROOT, "outputs", "results", METHOD_GROUP)
-PLOTS_DIR = os.path.join(PROJECT_ROOT, "outputs", "plots", METHOD_GROUP)
+RESULTS_DIR = os.path.join(PROJECT_ROOT, "outputs", "results_motion_yaw_map_agents", METHOD_GROUP)
+PLOTS_DIR = os.path.join(PROJECT_ROOT, "outputs", "plots_motion_yaw_map_agents", METHOD_GROUP)
 RIDGE_ALPHAS = [0.01, 0.1, 1.0, 10.0, 100.0]
 TEST_SIZE = 0.2
 RANDOM_STATE = 43
@@ -26,37 +26,104 @@ os.makedirs(PLOTS_DIR, exist_ok=True)
 
 dataset = NuScenesTrajectoryDataset(DATA_PATH)
 
+OUTPUT_STEPS = 12
+DT = 0.5
+HORIZON_TIMES = [(i + 1) * DT for i in range(OUTPUT_STEPS)]
+HORIZON_FIELDS = [f"err_{str(t).replace('.', 'p')}s" for t in HORIZON_TIMES]
+
+
+def horizon_errors(pred, true):
+    errors = torch.norm(pred - true, dim=1)
+    return errors.detach().cpu().numpy().astype(float)
+
+
+def save_horizon_results(results):
+    csv_path = os.path.join(RESULTS_DIR, f"{METHOD_GROUP}_horizon_errors.csv")
+
+    rows = []
+
+    for result in results:
+        row = {"method": result["method"]}
+
+        for field, value in zip(HORIZON_FIELDS, result["horizon_errors"]):
+            row[field] = float(value)
+
+        rows.append(row)
+
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["method"] + HORIZON_FIELDS
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def plot_horizon_comparison(results):
+    plt.figure(figsize=(9, 6))
+
+    for result in results:
+        plt.plot(
+            HORIZON_TIMES,
+            result["horizon_errors"],
+            marker="o",
+            label=result["method"]
+        )
+
+    plt.xlabel("Prediction horizon (seconds)")
+    plt.ylabel("Mean displacement error")
+    plt.title(f"{METHOD_GROUP}: Error by Prediction Horizon")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+
+    save_path = os.path.join(PLOTS_DIR, f"{METHOD_GROUP}_horizon_errors.png")
+    plt.savefig(save_path, dpi=200)
+    plt.close()
+
 def plot_trajectory_example(X, y_true, y_pred, method_name, idx, ade, fde):
     X_np = X.detach().cpu().numpy()
+    X_xy = X_np[:, :2]
+
     y_true_np = y_true.detach().cpu().numpy()
     y_pred_np = y_pred.detach().cpu().numpy()
 
-    # y_true and y_pred start AFTER the current position.
-    # Add current position so the plotted future connects to the observed past.
-    current_np = X_np[-1:]
+    current_np = X_xy[-1:]
     true_future_with_current = np.vstack([current_np, y_true_np])
     pred_future_with_current = np.vstack([current_np, y_pred_np])
+
     plt.figure(figsize=(7, 6))
 
-    plt.plot(X_np[:, 0], X_np[:, 1], marker="o", label="Past trajectory")
+    plt.plot(X_xy[:, 0], X_xy[:, 1], marker="o", label="Past trajectory")
     plt.plot(true_future_with_current[:, 0], true_future_with_current[:, 1], marker="o", label="True future")
     plt.plot(pred_future_with_current[:, 0], pred_future_with_current[:, 1], marker="x", label="Predicted future")
 
-    plt.scatter(X_np[-1, 0], X_np[-1, 1], marker="s", label="Current position")
+    plt.scatter(X_xy[-1, 0], X_xy[-1, 1], marker="s", label="Current position")
 
     plt.title(f"{method_name} | sample {idx}\nADE={ade:.3f}, FDE={fde:.3f}")
     plt.xlabel("x position")
     plt.ylabel("y position")
+
+    all_xy = np.vstack([X_xy, y_true_np, y_pred_np])
+
+    x_min, y_min = all_xy.min(axis=0)
+    x_max, y_max = all_xy.max(axis=0)
+
+    x_center = 0.5 * (x_min + x_max)
+    y_center = 0.5 * (y_min + y_max)
+
+    span = max(x_max - x_min, y_max - y_min, 1.0)
+    span = span * 1.15
+
+    plt.xlim(x_center - span / 2, x_center + span / 2)
+    plt.ylim(y_center - span / 2, y_center + span / 2)
+
     plt.legend()
-    plt.axis("equal")
+    plt.gca().set_aspect("equal", adjustable="box")
     plt.grid(True)
     plt.tight_layout()
 
-    save_path = os.path.join(
-        PLOTS_DIR,
-        f"{method_name}_sample_{idx}.png"
-    )
-
+    save_path = os.path.join(PLOTS_DIR, f"{method_name}_sample_{idx}.png")
     plt.savefig(save_path, dpi=200)
     plt.close()
 
@@ -80,16 +147,21 @@ def save_summary_results(results):
     csv_path = os.path.join(RESULTS_DIR, f"{METHOD_GROUP}_summary.csv")
     json_path = os.path.join(RESULTS_DIR, f"{METHOD_GROUP}_summary.json")
 
+    summary_rows = [
+        {k: v for k, v in r.items() if k != "horizon_errors"}
+        for r in results
+    ]
+
     with open(csv_path, "w", newline="") as f:
         writer = csv.DictWriter(
             f,
             fieldnames=["method", "alpha", "ade", "fde", "num_samples"]
         )
         writer.writeheader()
-        writer.writerows(results)
+        writer.writerows(summary_rows)
 
     with open(json_path, "w") as f:
-        json.dump(results, f, indent=4)
+        json.dump(summary_rows, f, indent=4)
 
 
 def plot_metric_comparison(results):
@@ -133,27 +205,30 @@ def linear_regression(ridge=False, num_plots=5):
     for idx in range(length):
         X, y_true = dataset[idx]
 
-        X_rows.append(X.flatten().numpy())       # [5, 2] -> [10]
-        y_rows.append(y_true.flatten().numpy())  # [12, 2] -> [24]
+        X_rows.append(X.numpy())          # [5, 25]
+        y_rows.append(y_true.numpy())     # [12, 2]
         indices.append(idx)
 
     X_all = np.array(X_rows)
     y_all = np.array(y_rows)
     indices = np.array(indices)
 
-    X_train_full, X_test, y_train_full, y_test, idx_train_full, idx_test = train_test_split(
+    X_train_full, X_test_seq, y_train_full, y_test_seq, idx_train_full, idx_test = train_test_split(
         X_all,
         y_all,
         indices,
         test_size=TEST_SIZE,
         random_state=RANDOM_STATE
     )
+    X_train_full_flat = X_train_full.reshape(len(X_train_full), -1)
+    X_test_flat = X_test_seq.reshape(len(X_test_seq), -1)
+    y_train_full_flat = y_train_full.reshape(len(y_train_full), -1)
 
     if not ridge:
         model = LinearRegression()
         method_name = "linear_regression"
         best_alpha = None
-        model.fit(X_train_full, y_train_full)
+        model.fit(X_train_full_flat, y_train_full_flat)
 
     else:
         method_name = "ridge_regression"
@@ -161,8 +236,8 @@ def linear_regression(ridge=False, num_plots=5):
         best_val_ade = float("inf")
 
         X_train, X_val, y_train, y_val = train_test_split(
-            X_train_full,
-            y_train_full,
+            X_train_full_flat,
+            y_train_full_flat,
             test_size=TEST_SIZE,
             random_state=RANDOM_STATE
         )
@@ -171,9 +246,7 @@ def linear_regression(ridge=False, num_plots=5):
             candidate_model = Ridge(alpha=alpha)
             candidate_model.fit(X_train, y_train)
 
-            val_pred = candidate_model.predict(X_val)
-
-            val_pred = val_pred.reshape(-1, 12, 2)
+            val_pred = candidate_model.predict(X_val).reshape(-1, 12, 2)
             val_true = y_val.reshape(-1, 12, 2)
 
             val_errors = np.linalg.norm(val_pred - val_true, axis=2)
@@ -188,16 +261,16 @@ def linear_regression(ridge=False, num_plots=5):
         print(f"Best Ridge alpha: {best_alpha}")
 
         model = Ridge(alpha=best_alpha)
-        model.fit(X_train_full, y_train_full)
+        model.fit(X_train_full_flat, y_train_full_flat)
 
-    y_pred = model.predict(X_test)
+    y_pred = model.predict(X_test_flat).reshape(-1, 12, 2)
 
-    X_test = X_test.reshape(-1, 5, 2)
-    y_test = y_test.reshape(-1, 12, 2)
-    y_pred = y_pred.reshape(-1, 12, 2)
+    X_test = X_test_seq
+    y_test = y_test_seq
 
     ade_list = []
     fde_list = []
+    horizon_error_rows = []
     per_sample_rows = []
 
     plot_positions = np.linspace(
@@ -214,9 +287,12 @@ def linear_regression(ridge=False, num_plots=5):
 
         ade = ADE(y_pred_tensor, y_true_tensor)
         fde = FDE(y_pred_tensor, y_true_tensor)
+        h_err = horizon_errors(y_pred_tensor, y_true_tensor)
+
 
         ade_list.append(ade)
         fde_list.append(fde)
+        horizon_error_rows.append(h_err)
 
         original_idx = int(idx_test[i])
 
@@ -239,6 +315,7 @@ def linear_regression(ridge=False, num_plots=5):
 
     mean_ade = float(np.mean(ade_list))
     mean_fde = float(np.mean(fde_list))
+    mean_horizon_errors = np.mean(np.stack(horizon_error_rows), axis=0)
 
     save_per_sample_results(method_name, per_sample_rows)
 
@@ -251,17 +328,21 @@ def linear_regression(ridge=False, num_plots=5):
         "alpha": best_alpha,
         "ade": mean_ade,
         "fde": mean_fde,
-        "num_samples": len(X_test)
+        "num_samples": len(X_test),
+        "horizon_errors": mean_horizon_errors
     }
  
 def main():
     results = []
 
-    results.append(linear_regression(ridge=False))
-    results.append(linear_regression(ridge=True))
+    results.append(linear_regression(ridge=False, num_plots=20))
+    results.append(linear_regression(ridge=True, num_plots=20))
 
     save_summary_results(results)
+    save_horizon_results(results)
+
     plot_metric_comparison(results)
+    plot_horizon_comparison(results)
 
     print("\nSaved results to:", RESULTS_DIR)
     print("Saved plots to:", PLOTS_DIR)
