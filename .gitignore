@@ -1,4 +1,3 @@
-cat > .gitignore << 'EOF'
 # Python
 __pycache__/
 *.py[cod]
@@ -30,7 +29,33 @@ outputs/checkpoints/
 *.pth
 *.ckpt
 
+# Old/generated experiment outputs to keep local only
+outputs/results/
+outputs/results_motion_yaw/
+outputs/results_motion_yaw_map_agents/
+outputs/results_motion_yaw_residual_cv/
+outputs/results_motion_yaw_weighted/
+
+outputs/plots/
+outputs/plots_motion_yaw/
+outputs/plots_motion_yaw_map_agents/
+outputs/plots_motion_yaw_residual_cv/
+outputs/plots_motion_yaw_weighted/
+
+# Keep final report folders public/trackable
+!outputs/final_report/
+!outputs/final_report/**
+!outputs/final_report_feature_comparison/
+!outputs/final_report_feature_comparison/**
+!outputs/final_report_map_agents_comparison/
+!outputs/final_report_map_agents_comparison/**
+!outputs/final_report_motion_yaw_norm/
+!outputs/final_report_motion_yaw_norm/**
+
+# Keep rolling online eval public/trackable
+!outputs/rolling_online_eval/
+!outputs/rolling_online_eval/**
+
 # System files
 .DS_Store
 Thumbs.db
-EOF
