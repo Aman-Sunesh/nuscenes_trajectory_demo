@@ -33,7 +33,7 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 OUTPUT_STEPS = 12
 NUM_EXAMPLES = 30
-USE_TEST_ONLY = False
+USE_TEST_ONLY = True
 
 
 class LSTMBaseline(nn.Module):
@@ -80,6 +80,15 @@ def normalize_with_saved_stats(X, feature_mean, feature_std):
 
 
 def agent_to_global(points_local, anchor_xy, anchor_yaw, mode):
+    if mode == "nuscenes_helper":
+        points_local = np.stack(
+            [
+                points_local[:, 1],
+                -points_local[:, 0]
+            ],
+            axis=1
+        )    
+    
     c = np.cos(anchor_yaw)
     s = np.sin(anchor_yaw)
 
@@ -92,6 +101,9 @@ def agent_to_global(points_local, anchor_xy, anchor_yaw, mode):
     )
 
     if mode == "standard":
+        return points_local @ R.T + anchor_xy
+
+    if mode == "nuscenes_helper":
         return points_local @ R.T + anchor_xy
 
     if mode == "transpose":
@@ -111,6 +123,7 @@ def choose_local_to_global_mode(
 
     standard_errors = []
     transpose_errors = []
+    nuscenes_helper_errors = []
 
     for i in range(n):
         std_global = agent_to_global(
@@ -127,6 +140,13 @@ def choose_local_to_global_mode(
             mode="transpose"
         )
 
+        helper_global = agent_to_global(
+            y_raw[i],
+            anchor_global_xy[i],
+            anchor_yaws[i],
+            mode="nuscenes_helper"
+        )
+
         true_global = future_global_xy[i]
 
         standard_errors.append(
@@ -137,19 +157,29 @@ def choose_local_to_global_mode(
             np.mean(np.linalg.norm(trans_global - true_global, axis=1))
         )
 
+        nuscenes_helper_errors.append(
+            np.mean(np.linalg.norm(helper_global - true_global, axis=1))
+        )
+
     standard_mean = float(np.mean(standard_errors))
     transpose_mean = float(np.mean(transpose_errors))
+    nuscenes_helper_mean = float(np.mean(nuscenes_helper_errors))
 
     print("Local-to-global check:")
     print("standard mean error:", standard_mean)
     print("transpose mean error:", transpose_mean)
+    print("nuscenes_helper mean error:", nuscenes_helper_mean)
 
-    if standard_mean <= transpose_mean:
-        print("Using local-to-global mode: standard")
-        return "standard"
+    errors = {
+        "standard": standard_mean,
+        "transpose": transpose_mean,
+        "nuscenes_helper": nuscenes_helper_mean
+    }
 
-    print("Using local-to-global mode: transpose")
-    return "transpose"
+    best_mode = min(errors, key=errors.get)
+
+    print("Using local-to-global mode:", best_mode)
+    return best_mode
 
 
 def save_csv(path, rows, fieldnames):
@@ -278,6 +308,103 @@ def compute_turn_angle_deg(path_xy):
     total_turn = np.sum(np.abs(heading_changes))
 
     return float(np.degrees(total_turn))
+
+def summarize_horizon_errors(point_rows):
+    horizon_rows = []
+
+    for step in range(1, OUTPUT_STEPS + 1):
+        rows = [
+            row for row in point_rows
+            if row["target_step"] == step
+        ]
+
+        if len(rows) == 0:
+            continue
+
+        offline_errors = np.array(
+            [row["initial_error"] for row in rows],
+            dtype=np.float32
+        )
+
+        online_errors = np.array(
+            [row["online_error"] for row in rows],
+            dtype=np.float32
+        )
+
+        horizon_rows.append({
+            "target_step": step,
+            "mean_offline_error": float(np.mean(offline_errors)),
+            "mean_online_error": float(np.mean(online_errors)),
+            "mean_error_improvement": float(np.mean(offline_errors - online_errors)),
+            "median_offline_error": float(np.median(offline_errors)),
+            "median_online_error": float(np.median(online_errors)),
+            "num_points": len(rows)
+        })
+
+    return horizon_rows
+
+
+def plot_error_comparison(horizon_rows, summary):
+    steps = np.array(
+        [row["target_step"] for row in horizon_rows],
+        dtype=np.int32
+    )
+
+    offline_errors = np.array(
+        [row["mean_offline_error"] for row in horizon_rows],
+        dtype=np.float32
+    )
+
+    online_errors = np.array(
+        [row["mean_online_error"] for row in horizon_rows],
+        dtype=np.float32
+    )
+
+    plt.figure(figsize=(9, 6))
+
+    plt.plot(
+        steps,
+        offline_errors,
+        marker="o",
+        linewidth=2.5,
+        label="Offline prediction error"
+    )
+
+    plt.plot(
+        steps,
+        online_errors,
+        marker="o",
+        linewidth=2.5,
+        label="Online-updated prediction error"
+    )
+
+    plt.xlabel("Prediction horizon step")
+    plt.ylabel("Mean displacement error")
+
+    plt.title(
+        "Offline vs online-updated prediction error\n"
+        f"offline ADE={summary['mean_initial_ade']:.3f}, "
+        f"online ADE={summary['mean_online_ade']:.3f}, "
+        f"ADE improvement={summary['mean_ade_improvement']:.3f}\n"
+        f"offline FDE={summary['mean_initial_fde']:.3f}, "
+        f"online FDE={summary['mean_online_fde']:.3f}, "
+        f"FDE improvement={summary['mean_fde_improvement']:.3f}"
+    )
+
+    plt.xticks(steps)
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+
+    save_path = os.path.join(
+        OUT_DIR,
+        "online_updated_error_by_horizon.png"
+    )
+
+    plt.savefig(save_path, dpi=200)
+    plt.close()
+
+    return save_path
 
 def main():
     data = np.load(DATA_PATH, allow_pickle=True)
@@ -625,7 +752,7 @@ def main():
     )
 
     if len(window_rows) == 0:
-        raise RuntimeError("No valid online stitched windows found.")
+        raise RuntimeError("No valid online-updated windows found.")
 
     mean_initial_ade = float(np.mean([r["initial_ade"] for r in window_rows]))
     mean_online_ade = float(np.mean([r["online_ade"] for r in window_rows]))
@@ -650,6 +777,32 @@ def main():
 
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=4)
+
+    horizon_rows = summarize_horizon_errors(point_rows)
+
+    horizon_csv_path = os.path.join(
+        OUT_DIR,
+        "online_updated_horizon_error_summary.csv"
+    )
+
+    save_csv(
+        horizon_csv_path,
+        horizon_rows,
+        fieldnames=[
+            "target_step",
+            "mean_offline_error",
+            "mean_online_error",
+            "mean_error_improvement",
+            "median_offline_error",
+            "median_online_error",
+            "num_points"
+        ]
+    )
+
+    error_plot_path = plot_error_comparison(
+        horizon_rows=horizon_rows,
+        summary=summary
+    )
 
     turning_windows = [
         r for r in window_rows
@@ -692,6 +845,8 @@ def main():
 
     print("\nSaved online-updated summary to:", summary_csv_path)
     print("Saved online-updated points to:", point_csv_path)
+    print("Saved horizon error summary to:", horizon_csv_path)
+    print("Saved error comparison plot to:", error_plot_path)
     print("Saved summary JSON to:", summary_path)
     print("Saved plots to:", OUT_DIR)
 

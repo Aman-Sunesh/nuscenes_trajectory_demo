@@ -1,10 +1,10 @@
 {
-    "num_windows": 3517,
-    "mean_initial_ade": 7.807296960741199,
-    "mean_online_ade": 2.8641544731767072,
-    "mean_ade_improvement": 4.943142487564492,
-    "mean_initial_fde": 14.323026830585764,
-    "mean_online_fde": 5.504467038697648,
-    "mean_fde_improvement": 8.818559791888116,
-    "use_test_only": false
+    "num_windows": 704,
+    "mean_initial_ade": 0.6729988077779787,
+    "mean_online_ade": 0.39558868018502835,
+    "mean_ade_improvement": 0.27741012759295036,
+    "mean_initial_fde": 1.387014943542123,
+    "mean_online_fde": 0.6547506605119534,
+    "mean_fde_improvement": 0.7322642830301697,
+    "use_test_only": true
 }
