@@ -236,7 +236,7 @@ def plot_online_example(row, example_idx):
     plt.ylabel("global y position")
 
     plt.title(
-        "Online stitched trajectory prediction\n"
+        "Online-updated trajectory prediction\n"
         f"initial ADE={row['initial_ade']:.3f}, "
         f"online ADE={row['online_ade']:.3f}, "
         f"turn={row['turn_angle_deg']:.1f}°"
@@ -248,7 +248,7 @@ def plot_online_example(row, example_idx):
 
     save_path = os.path.join(
         OUT_DIR,
-        f"online_stitched_example_{example_idx:02d}.png"
+        f"online_updated_example_{example_idx:02d}.png"
     )
 
     plt.savefig(save_path, dpi=200)
@@ -574,7 +574,7 @@ def main():
 
     summary_csv_path = os.path.join(
         OUT_DIR,
-        "online_stitched_window_summary.csv"
+        "online_updated_window_summary.csv"
     )
 
     save_csv(
@@ -598,7 +598,7 @@ def main():
 
     point_csv_path = os.path.join(
         OUT_DIR,
-        "online_stitched_points.csv"
+        "online_updated_points.csv"
     )
 
     save_csv(
@@ -645,7 +645,7 @@ def main():
 
     summary_path = os.path.join(
         OUT_DIR,
-        "online_stitched_summary.json"
+        "online_updated_summary.json"
     )
 
     with open(summary_path, "w") as f:
@@ -690,8 +690,8 @@ def main():
             example_idx=example_idx
         )
 
-    print("\nSaved online stitched summary to:", summary_csv_path)
-    print("Saved online stitched points to:", point_csv_path)
+    print("\nSaved online-updated summary to:", summary_csv_path)
+    print("Saved online-updated points to:", point_csv_path)
     print("Saved summary JSON to:", summary_path)
     print("Saved plots to:", OUT_DIR)
 
