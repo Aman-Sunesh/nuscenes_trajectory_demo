@@ -1,0 +1,10 @@
+{
+    "num_windows": 3517,
+    "mean_initial_ade": 7.807296960741199,
+    "mean_online_ade": 2.8641544731767072,
+    "mean_ade_improvement": 4.943142487564492,
+    "mean_initial_fde": 14.323026830585764,
+    "mean_online_fde": 5.504467038697648,
+    "mean_fde_improvement": 8.818559791888116,
+    "use_test_only": false
+}

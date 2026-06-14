@@ -101,6 +101,25 @@ def get_annotation_history(nusc, current_ann, num_past_steps):
 
     return anns
 
+def get_annotation_future(nusc, current_ann, num_future_steps):
+    """
+    Returns future annotation sequence:
+    next -> ... -> future
+    length = num_future_steps
+    """
+    anns = []
+    ann = current_ann
+
+    for _ in range(num_future_steps):
+        next_token = ann["next"]
+
+        if next_token == "":
+            return None
+
+        ann = nusc.get("sample_annotation", next_token)
+        anns.append(ann)
+
+    return anns
 
 def build_motion_features(past_with_current_xy, ann_sequence):
     """
@@ -396,6 +415,14 @@ def main():
     X_list = []
     y_list = []
     meta_list = []
+    instance_tokens = []
+    sample_tokens = []
+    scene_tokens = []
+    anchor_timestamps = []
+    anchor_global_xy = []
+    anchor_yaws = []
+    future_timestamps = []
+    future_global_xy = []
 
     feature_names = [
         "x", "y",
@@ -470,6 +497,15 @@ def main():
         if ann_sequence is None:
             continue
 
+        future_ann_sequence = get_annotation_future(
+            nusc=nusc,
+            current_ann=ann,
+            num_future_steps=EXPECTED_FUTURE_STEPS
+        )
+
+        if future_ann_sequence is None:
+            continue
+
         motion_features = build_motion_features(
             past_with_current_xy=past_with_current,
             ann_sequence=ann_sequence
@@ -495,9 +531,43 @@ def main():
         X_list.append(X_features)
         y_list.append(future)
 
+        sample = nusc.get("sample", sample_token)
+        scene_token = sample["scene_token"]
+        anchor_timestamp = sample["timestamp"]
+        anchor_xy_global = np.array(ann["translation"][:2], dtype=np.float32)
+        anchor_yaw = get_yaw(ann)
+
+        future_xy_global = np.array(
+            [future_ann["translation"][:2] for future_ann in future_ann_sequence],
+            dtype=np.float32
+        )
+
+        future_ts = np.array(
+            [
+                nusc.get("sample", future_ann["sample_token"])["timestamp"]
+                for future_ann in future_ann_sequence
+            ],
+            dtype=np.int64
+        )
+
+        instance_tokens.append(instance_token)
+        sample_tokens.append(sample_token)
+        scene_tokens.append(scene_token)
+        anchor_timestamps.append(anchor_timestamp)
+        anchor_global_xy.append(anchor_xy_global)
+        anchor_yaws.append(anchor_yaw)
+        future_global_xy.append(future_xy_global)
+        future_timestamps.append(future_ts)
+
         meta_list.append({
             "instance_token": instance_token,
             "sample_token": sample_token,
+            "scene_token": scene_token,
+            "anchor_timestamp": anchor_timestamp,
+            "anchor_global_xy": anchor_xy_global,
+            "anchor_yaw": anchor_yaw,
+            "future_timestamps": future_ts,
+            "future_global_xy": future_xy_global,
             "category_name": category_name,
             "location": location,
             "feature_type": "xy_v_a_yaw_lane_nearby_type",
@@ -514,7 +584,15 @@ def main():
         X=X,
         y=y,
         meta=np.array(meta_list, dtype=object),
-        feature_names=np.array(feature_names, dtype=object)
+        feature_names=np.array(feature_names, dtype=object),
+        instance_tokens=np.array(instance_tokens, dtype=object),
+        sample_tokens=np.array(sample_tokens, dtype=object),
+        scene_tokens=np.array(scene_tokens, dtype=object),
+        anchor_timestamps=np.array(anchor_timestamps, dtype=np.int64),
+        anchor_global_xy=np.stack(anchor_global_xy).astype(np.float32),
+        anchor_yaws=np.array(anchor_yaws, dtype=np.float32),
+        future_timestamps=np.stack(future_timestamps).astype(np.int64),
+        future_global_xy=np.stack(future_global_xy).astype(np.float32)
     )
 
     print("\nSaved:", OUT_PATH)
@@ -522,7 +600,15 @@ def main():
     print("y shape:", y.shape)
     print("Feature count:", len(feature_names))
     print("Feature names:", feature_names)
-
+    print("Metadata arrays:")
+    print("instance_tokens:", len(instance_tokens))
+    print("sample_tokens:", len(sample_tokens))
+    print("scene_tokens:", len(scene_tokens))
+    print("anchor_timestamps:", len(anchor_timestamps))
+    print("anchor_global_xy:", np.stack(anchor_global_xy).shape)
+    print("anchor_yaws:", len(anchor_yaws))
+    print("future_timestamps:", np.stack(future_timestamps).shape)
+    print("future_global_xy:", np.stack(future_global_xy).shape)
 
 if __name__ == "__main__":
     main()
